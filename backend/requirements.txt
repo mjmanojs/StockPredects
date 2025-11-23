@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+firebase-admin
+redis
+yfinance
+pandas
+scikit-learn
+python-multipart
+python-jose[cryptography]
+passlib[bcrypt]
+pydantic-settings
+httpx
