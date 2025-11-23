@@ -1,53 +1,114 @@
-# Deployment Guide
+# AWS Deployment Guide
 
-## 1. Frontend (Vercel)
-The frontend is built with Next.js and is ready for Vercel.
+This guide explains how to deploy the Stock Predects application on Amazon Web Services (AWS).
 
-### Steps:
-1.  Push your code to GitHub.
-2.  Go to [Vercel Dashboard](https://vercel.com/dashboard) -> **Add New Project**.
-3.  Import your `stock-predects` repository.
-4.  **Framework Preset**: Next.js (should be auto-detected).
-5.  **Root Directory**: If asked, select `frontend`. (The `vercel.json` file should handle this, but setting it in UI is safer).
+## Architecture Overview
+- **Frontend**: AWS Amplify (Best for Next.js CI/CD)
+- **Backend**: AWS EC2 (Dockerized FastAPI + Redis + Worker)
+- **Database**: Firebase Firestore (External)
+
+---
+
+## 1. Backend Deployment (AWS EC2)
+Since the backend requires a background worker and Redis, an EC2 instance is the most cost-effective and flexible option.
+
+### Step 1: Launch an EC2 Instance
+1.  Log in to AWS Console -> **EC2**.
+2.  **Launch Instance**:
+    *   **Name**: `stock-predects-backend`
+    *   **OS**: Ubuntu Server 22.04 LTS
+    *   **Instance Type**: `t2.micro` (Free Tier eligible) or `t3.small` (Recommended).
+    *   **Key Pair**: Create a new one (e.g., `stock-key`) and download the `.pem` file.
+    *   **Security Group**: Allow SSH (22), HTTP (80), and Custom TCP (8000).
+
+### Step 2: Prepare the Instance
+SSH into your instance:
+```bash
+ssh -i "path/to/stock-key.pem" ubuntu@<your-ec2-public-ip>
+```
+
+Install Docker & Git:
+```bash
+sudo apt update
+sudo apt install docker.io docker-compose git -y
+sudo usermod -aG docker $USER
+# Log out and log back in for group changes to take effect
+exit
+ssh -i ...
+```
+
+### Step 3: Deploy Code
+1.  Clone your repository:
+    ```bash
+    git clone https://github.com/mjmanojs/StockPredects.git
+    cd StockPredects
+    ```
+2.  Create `.env` file for Backend:
+    ```bash
+    cd backend
+    nano .env
+    ```
+    *Paste your environment variables (FIREBASE config, etc).*
+
+3.  Create `docker-compose.yml` (if not present) or run with Docker:
+    ```bash
+    # Build and Run
+    docker build -t stock-backend .
+    
+    # Run Redis
+    docker run -d --name redis -p 6379:6379 redis
+    
+    # Run Backend (Link to Redis)
+    docker run -d --name backend -p 8000:8000 --link redis:redis -e REDIS_URL=redis://redis:6379/0 stock-backend
+    
+    # Run Worker
+    docker run -d --name worker --link redis:redis -e REDIS_URL=redis://redis:6379/0 stock-backend python app/worker.py
+    ```
+
+### Step 4: Configure Firewall
+Ensure AWS Security Group allows traffic on port `8000`.
+Your Backend URL will be: `http://<your-ec2-public-ip>:8000`
+
+---
+
+## 2. Frontend Deployment (AWS Amplify)
+AWS Amplify is the easiest way to deploy Next.js apps.
+
+1.  Go to **AWS Amplify Console**.
+2.  **New App** -> **Host Web App**.
+3.  Select **GitHub** and authorize.
+4.  Select `StockPredects` repository and `main` branch.
+5.  **Build Settings**:
+    *   Amplify automatically detects Next.js.
+    *   Ensure `baseDirectory` is set to `frontend/.next`.
+    *   **Important**: Edit the build settings to point to the `frontend` directory:
+        ```yaml
+        version: 1
+        applications:
+          - frontend:
+              phases:
+                preBuild:
+                  commands:
+                    - npm ci
+                build:
+                  commands:
+                    - npm run build
+              artifacts:
+                baseDirectory: .next
+                files:
+                  - '**/*'
+              cache:
+                paths:
+                  - node_modules/**/*
+            appRoot: frontend
+        ```
 6.  **Environment Variables**:
-    *   `NEXT_PUBLIC_API_URL`: The URL of your deployed backend (e.g., `https://stock-predects-backend.onrender.com/api/v1`).
-    *   *Note: For now, you can leave this empty or set to `http://localhost:8000/api/v1` for local testing, but it won't work online until Backend is deployed.*
-7.  Click **Deploy**.
+    *   Add `NEXT_PUBLIC_API_URL` = `http://<your-ec2-public-ip>:8000/api/v1`
+    *   Add Firebase config variables (`NEXT_PUBLIC_FIREBASE_API_KEY`, etc).
+7.  Click **Save and Deploy**.
 
-## 2. Backend (Render / Railway)
-**Important**: The backend cannot be hosted on Vercel because it uses a **background worker** for real-time data and requires **Redis**. Vercel is for serverless functions only.
+---
 
-We recommend **Render** or **Railway** as they support Docker and background workers.
-
-### Option A: Render (Recommended)
-1.  Create a [Render account](https://render.com/).
-2.  **Create a Web Service** (for the API):
-    *   Connect GitHub repo.
-    *   **Root Directory**: `backend`
-    *   **Runtime**: Python 3
-    *   **Build Command**: `pip install -r requirements.txt`
-    *   **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port 10000`
-    *   **Environment Variables**:
-        *   `FIREBASE_CREDENTIALS`: (Paste content of `firebase-adminsdk.json`)
-        *   `REDIS_URL`: (See step 3)
-3.  **Create a Redis Instance** (on Render):
-    *   Copy the `REDIS_URL` and add it to the Web Service env vars.
-4.  **Create a Background Worker** (optional, for real-time updates):
-    *   Connect same repo.
-    *   **Root Directory**: `backend`
-    *   **Start Command**: `python app/worker.py`
-    *   Add same Environment Variables.
-
-### Option B: Railway
-1.  Login to [Railway](https://railway.app/).
-2.  New Project -> Deploy from GitHub repo.
-3.  Add a **Redis** database from the Railway dashboard.
-4.  Configure variables (`FIREBASE_CREDENTIALS`, `REDIS_URL`).
-5.  Railway automatically detects the `Dockerfile` in `backend/` and builds it.
-
-## 3. Linking Them
-Once Backend is deployed:
-1.  Copy the Backend URL (e.g., `https://your-app.onrender.com`).
-2.  Go to Vercel -> Project Settings -> Environment Variables.
-3.  Add `NEXT_PUBLIC_API_URL` = `https://your-app.onrender.com/api/v1`.
-4.  Redeploy Frontend.
+## 3. Final Steps
+1.  Once Amplify finishes, you will get a domain (e.g., `https://main.d123.amplifyapp.com`).
+2.  Open the app and test Login and Search.
