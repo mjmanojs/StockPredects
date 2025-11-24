@@ -5,9 +5,25 @@ This guide explains how to deploy the Stock Predects application on Amazon Web S
 ## Architecture Overview
 - **Frontend**: AWS Amplify (Best for Next.js CI/CD)
 - **Backend**: AWS EC2 (Dockerized FastAPI + Redis + Worker)
-- **Database**: Firebase Firestore (External)
+- **Database**: Firebase Firestore (External - Google Cloud)
 
 ---
+
+## 1. Database (Firebase vs AWS)
+Currently, your application is built using **Firebase** (Firestore & Authentication), which is a managed service by Google.
+
+### Can I deploy the database to AWS?
+*   **No, you cannot "deploy" Firebase to AWS.** Firebase is a proprietary Google product.
+*   **However, you CAN connect to Firebase from AWS.** Your AWS-hosted backend and frontend will connect to Firebase over the internet using your API keys. This is a very common hybrid architecture.
+
+### If you MUST use an AWS Database:
+You would need to **migrate** your data and **rewrite** your code to use an AWS database:
+*   **AWS DynamoDB**: The closest alternative to Firestore (NoSQL). Requires changing all `firebase-admin` and client-side Firebase code.
+*   **AWS DocumentDB**: MongoDB-compatible.
+*   **AWS RDS**: For SQL databases (PostgreSQL/MySQL).
+
+**Recommendation**: Stick with **Firebase** for now. It works perfectly with AWS EC2 and Amplify.
+
 
 ## 1. Backend Deployment (AWS EC2)
 Since the backend requires a background worker and Redis, an EC2 instance is the most cost-effective and flexible option.
